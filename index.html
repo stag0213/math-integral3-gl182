@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>線分ABの回転面 S の可視化</title>
+
+<!-- KaTeX（数式表示） -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0f1220; font-family: "Hiragino Sans", "Meiryo", sans-serif; color: #e8e8f0; }
+  #panel {
+    position: absolute; top: 12px; left: 12px; width: 340px;
+    background: rgba(20, 24, 45, 0.88); border: 1px solid #3a4070; border-radius: 10px;
+    padding: 14px 16px; font-size: 14px; line-height: 1.6; box-shadow: 0 4px 20px rgba(0,0,0,.4);
+  }
+  #panel h1 { font-size: 16px; margin: 0 0 6px; color: #9fd0ff; }
+  .eq { background: #1b2040; border-radius: 6px; padding: 6px 8px; margin: 6px 0 10px; }
+  label { display: block; margin-top: 8px; }
+  input[type=range] { width: 100%; }
+  .row { display: flex; gap: 8px; margin-top: 10px; }
+  button {
+    flex: 1; padding: 6px; border: none; border-radius: 6px; cursor: pointer;
+    background: #3d5afe; color: #fff; font-size: 14px;
+  }
+  button:hover { background: #5c74ff; }
+  .chk { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+  .chk label { margin: 0; display: inline; }
+  #info { margin-top: 8px; padding: 6px 8px; background: #1b2040; border-radius: 6px; font-size: 13px; }
+  #info div { margin: 2px 0; }
+  .katex { font-size: 1.08em; color: #ffffff; }
+  #info .katex { font-size: 1.05em; }
+  .legend span { display: inline-block; width: 12px; height: 12px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+  #hint { position: absolute; bottom: 10px; right: 14px; font-size: 12px; color: #888; }
+</style>
+
+<script type="importmap">
+{ "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="panel">
+  <h1>線分ABの z軸まわりの回転面 S</h1>
+  <div data-tex="\mathrm{A}(1,\,1,\,-1),\ \ \mathrm{B}(-3,\,1,\,3)"></div>
+  <div class="eq" data-tex="S:\ x^2+y^2=z^2+1\quad(-1\le z\le 3)"></div>
+
+  <label>回転角 <span data-tex="\theta"></span> : <b id="thetaVal">360</b>°</label>
+  <input type="range" id="theta" min="0" max="360" step="1" value="360">
+  <div class="row">
+    <button id="play">▶ 回転アニメーション</button>
+    <button id="reset">リセット</button>
+  </div>
+
+  <div class="chk"><input type="checkbox" id="wire"><label for="wire">ワイヤーフレーム表示</label></div>
+  <div class="chk"><input type="checkbox" id="opaque"><label for="opaque">不透明にする</label></div>
+  <div class="chk"><input type="checkbox" id="secOn" checked><label for="secOn">断面（<span data-tex="z="></span> 一定）を表示</label></div>
+
+  <label>断面の高さ <span data-tex="z"></span> : <b id="zVal">0.00</b></label>
+  <input type="range" id="zSec" min="-1" max="3" step="0.01" value="0">
+  <div id="info"></div>
+
+  <div class="legend" style="margin-top:8px;font-size:12px">
+    <span style="background:#ff5252"></span>線分AB　
+    <span style="background:#ffd740"></span>回転中の線分　
+    <span style="background:#69f0ae"></span>断面円
+  </div>
+</div>
+<div id="hint">ドラッグ：回転 ／ ホイール：拡大縮小 ／ 右ドラッグ：平行移動</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ---------- 基本設定（z軸を上向きにする） ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0f1220);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 200);
+camera.up.set(0, 0, 1);
+camera.position.set(10, -9, 7);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0, 1);
+controls.enableDamping = true;
+controls.update();
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+const dl = new THREE.DirectionalLight(0xffffff, 0.9); dl.position.set(5, -6, 10); scene.add(dl);
+const dl2 = new THREE.DirectionalLight(0xffffff, 0.4); dl2.position.set(-6, 5, -4); scene.add(dl2);
+
+// ---------- ラベル ----------
+function makeLabel(text, color = '#ffffff', size = 0.45) {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 128;
+  const ctx = c.getContext('2d');
+  ctx.font = 'bold 60px sans-serif'; ctx.fillStyle = color;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(text, 128, 64);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false }));
+  sp.scale.set(size * 2, size, 1);
+  return sp;
+}
+
+// ---------- 座標軸・グリッド ----------
+function axis(from, to, color) {
+  const g = new THREE.BufferGeometry().setFromPoints([from, to]);
+  scene.add(new THREE.Line(g, new THREE.LineBasicMaterial({ color })));
+}
+const L = 5;
+axis(new THREE.Vector3(-L, 0, 0), new THREE.Vector3(L, 0, 0), 0xff8a80);
+axis(new THREE.Vector3(0, -L, 0), new THREE.Vector3(0, L, 0), 0x80d8ff);
+axis(new THREE.Vector3(0, 0, -2.5), new THREE.Vector3(0, 0, 4.5), 0xb9f6ca);
+[['x', [L + 0.3, 0, 0], '#ff8a80'], ['y', [0, L + 0.3, 0], '#80d8ff'], ['z', [0, 0, 4.8], '#b9f6ca']]
+  .forEach(([t, p, c]) => { const s = makeLabel(t, c); s.position.set(...p); scene.add(s); });
+const O = makeLabel('O', '#cccccc', 0.35); O.position.set(-0.25, -0.25, -0.2); scene.add(O);
+
+const grid = new THREE.GridHelper(10, 10, 0x444a70, 0x2a2f50);
+grid.rotation.x = Math.PI / 2; scene.add(grid);
+
+// ---------- 点A, B と線分AB ----------
+const A = new THREE.Vector3(1, 1, -1);
+const B = new THREE.Vector3(-3, 1, 3);
+
+function dot(p, color, r = 0.08) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 20), new THREE.MeshBasicMaterial({ color }));
+  m.position.copy(p); scene.add(m); return m;
+}
+dot(A, 0xff5252); dot(B, 0xff5252);
+const la = makeLabel('A', '#ff8a80'); la.position.set(A.x + 0.3, A.y, A.z - 0.3); scene.add(la);
+const lb = makeLabel('B', '#ff8a80'); lb.position.set(B.x - 0.3, B.y, B.z + 0.3); scene.add(lb);
+
+const segAB = new THREE.Line(new THREE.BufferGeometry().setFromPoints([A, B]),
+  new THREE.LineBasicMaterial({ color: 0xff5252 }));
+scene.add(segAB);
+
+// z軸まわりの回転
+const rotZ = (p, th) => new THREE.Vector3(
+  p.x * Math.cos(th) - p.y * Math.sin(th),
+  p.x * Math.sin(th) + p.y * Math.cos(th), p.z);
+
+// ---------- 回転面 S の生成 ----------
+const matSurf = new THREE.MeshStandardMaterial({
+  vertexColors: true, side: THREE.DoubleSide, transparent: true, opacity: 0.6,
+  roughness: 0.5, metalness: 0.1, depthWrite: false
+});
+const matWire = new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.25 });
+
+let surf = null, wire = null;
+function buildSurface(thMax) {
+  const nT = 48, nP = Math.max(2, Math.ceil(thMax / (2 * Math.PI) * 128));
+  const pos = [], col = [], idx = [];
+  const c = new THREE.Color();
+  for (let i = 0; i <= nT; i++) {
+    const t = i / nT;
+    const P = new THREE.Vector3().lerpVectors(A, B, t);   // (1-4t, 1, -1+4t)
+    c.setHSL(0.62 - 0.55 * t, 0.75, 0.55);                // 高さで色分け
+    for (let j = 0; j <= nP; j++) {
+      const q = rotZ(P, thMax * j / nP);
+      pos.push(q.x, q.y, q.z); col.push(c.r, c.g, c.b);
+    }
+  }
+  for (let i = 0; i < nT; i++) for (let j = 0; j < nP; j++) {
+    const a = i * (nP + 1) + j, b = a + nP + 1;
+    idx.push(a, b, a + 1, b, b + 1, a + 1);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx); g.computeVertexNormals();
+  return g;
+}
+
+// 端点 A, B の軌跡（円弧）
+function arcGeom(p, thMax) {
+  const n = Math.max(2, Math.ceil(thMax / (2 * Math.PI) * 128)), pts = [];
+  for (let j = 0; j <= n; j++) pts.push(rotZ(p, thMax * j / n));
+  return new THREE.BufferGeometry().setFromPoints(pts);
+}
+const arcA = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xff80ab }));
+const arcB = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xff80ab }));
+scene.add(arcA, arcB);
+
+// 回転中の線分
+const segRot = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffd740 }));
+scene.add(segRot);
+const dA = dot(A, 0xffd740, 0.06), dB = dot(B, 0xffd740, 0.06);
+
+// ---------- 断面 ----------
+const secCircle = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x69f0ae }));
+const secRadius = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineDashedMaterial({ color: 0x69f0ae, dashSize: 0.1, gapSize: 0.07 }));
+const secDot = dot(new THREE.Vector3(), 0x69f0ae, 0.07);
+scene.add(secCircle, secRadius);
+
+// ---------- UI ----------
+const $ = id => document.getElementById(id);
+let theta = 2 * Math.PI, playing = false;
+
+// KaTeX で数式を HTML に変換
+const tex = s => katex.renderToString(s, { throwOnError: false });
+
+// 静的な数式（data-tex 属性）を描画
+document.querySelectorAll('[data-tex]').forEach(el => {
+  katex.render(el.dataset.tex, el, { throwOnError: false });
+});
+
+// 数値を見やすく（末尾の0を除去）
+const fmt = (v, d = 4) => String(parseFloat(v.toFixed(d)));
+
+function updateSurface() {
+  if (surf) { scene.remove(surf, wire); surf.geometry.dispose(); }
+  if (theta > 0.001) {
+    const g = buildSurface(theta);
+    surf = new THREE.Mesh(g, matSurf); wire = new THREE.Mesh(g, matWire);
+    wire.visible = $('wire').checked;
+    scene.add(surf, wire);
+  } else surf = null;
+
+  arcA.geometry.dispose(); arcA.geometry = arcGeom(A, theta);
+  arcB.geometry.dispose(); arcB.geometry = arcGeom(B, theta);
+
+  const a = rotZ(A, theta), b = rotZ(B, theta);
+  segRot.geometry.dispose(); segRot.geometry = new THREE.BufferGeometry().setFromPoints([a, b]);
+  dA.position.copy(a); dB.position.copy(b);
+  $('thetaVal').textContent = Math.round(theta * 180 / Math.PI);
+}
+
+function updateSection() {
+  const z = parseFloat($('zSec').value), on = $('secOn').checked;
+  const r2 = z * z + 1, r = Math.sqrt(r2), pts = [];
+  for (let j = 0; j <= 128; j++) {
+    const p = j / 128 * 2 * Math.PI;
+    pts.push(new THREE.Vector3(r * Math.cos(p), r * Math.sin(p), z));
+  }
+  secCircle.geometry.dispose(); secCircle.geometry = new THREE.BufferGeometry().setFromPoints(pts);
+  const P = new THREE.Vector3(-z, 1, z);       // AB上で高さ z の点
+  secRadius.geometry.dispose();
+  secRadius.geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, z), P]);
+  secRadius.computeLineDistances();
+  secDot.position.copy(P);
+  [secCircle, secRadius, secDot].forEach(o => o.visible = on);
+  $('zVal').textContent = z.toFixed(2);
+
+  // 半径の表示：√ の中身が平方数なら整数で、そうでなければ √a ≈ 小数
+  const r2s = fmt(r2);
+  const rTex = Number.isInteger(Math.sqrt(parseFloat(r2s)))
+    ? `r=\\sqrt{z^2+1}=\\sqrt{${r2s}}=${Math.sqrt(parseFloat(r2s))}`
+    : `r=\\sqrt{z^2+1}=\\sqrt{${r2s}}\\approx ${r.toFixed(3)}`;
+
+  $('info').innerHTML =
+    `<div>AB上の点 ${tex(`\\mathrm{P}(${fmt(-z, 2)},\\ 1,\\ ${fmt(z, 2)})`)}</div>` +
+    `<div>断面の円の半径 ${tex(rTex)}</div>` +
+    `<div>断面積 ${tex(`\\pi r^2=\\pi(z^2+1)=${r2s}\\pi\\approx ${(Math.PI * r2).toFixed(3)}`)}</div>` +
+    (Math.abs(z) < 0.005 ? `<div style="color:#ffd740">← 最も細いところ（${tex('r=1')}）</div>` : '');
+}
+
+$('theta').addEventListener('input', e => {
+  theta = e.target.value * Math.PI / 180; playing = false;
+  $('play').textContent = '▶ 回転アニメーション'; updateSurface();
+});
+$('play').addEventListener('click', () => {
+  playing = !playing;
+  if (playing && theta >= 2 * Math.PI - 1e-3) theta = 0;
+  $('play').textContent = playing ? '⏸ 一時停止' : '▶ 回転アニメーション';
+});
+$('reset').addEventListener('click', () => {
+  playing = false; theta = 2 * Math.PI; $('theta').value = 360;
+  $('play').textContent = '▶ 回転アニメーション';
+  camera.position.set(10, -9, 7); controls.target.set(0, 0, 1); updateSurface();
+});
+$('wire').addEventListener('change', e => { if (wire) wire.visible = e.target.checked; });
+$('opaque').addEventListener('change', e => {
+  matSurf.opacity = e.target.checked ? 1 : 0.6;
+  matSurf.transparent = !e.target.checked; matSurf.depthWrite = e.target.checked; matSurf.needsUpdate = true;
+});
+$('secOn').addEventListener('change', updateSection);
+$('zSec').addEventListener('input', updateSection);
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+updateSurface(); updateSection();
+
+// ---------- ループ ----------
+renderer.setAnimationLoop(() => {
+  if (playing) {
+    theta = Math.min(theta + 0.02, 2 * Math.PI);
+    $('theta').value = theta * 180 / Math.PI;
+    updateSurface();
+    if (theta >= 2 * Math.PI) { playing = false; $('play').textContent = '▶ 回転アニメーション'; }
+  }
+  controls.update();
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>
